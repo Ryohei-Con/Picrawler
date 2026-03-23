@@ -2,9 +2,19 @@ import gpiozero  # https://gpiozero.readthedocs.io/en/latest/installing.html
 from gpiozero import OutputDevice, InputDevice, Button
 from time import sleep
 import subprocess
+import logging
 
 from smbus2 import SMBus
 import math
+
+# ロガーのセットアップ
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+handler = logging.StreamHandler()
+handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 
 # ピンのリセット
@@ -20,7 +30,7 @@ class Pin:
             self.pin_num = pin
             self.pin_name = {i for i in self._dict if self._dict[i] == pin}
         else:
-            print(f"pin should be in {self._dict.keys()}.\n But you put {pin}")
+            logger.warning(f"pin should be in {self._dict.keys()}. But you put {pin}")
 
         self.setup(mode)
 
@@ -30,7 +40,7 @@ class Pin:
         elif mode == "in":
             self.gpio = InputDevice(self.pin_num)
         else:
-            print(f"mode should be 'in' or 'out'. ")
+            logger.warning(f"mode should be 'in' or 'out'.")
 
     def value(self, value):
         if value == 1:
@@ -40,7 +50,7 @@ class Pin:
             self.gpio.off()
             return value
         else:
-            print(f"value should be 0 or 1.\n But you put {value}.")
+            logger.warning(f"value should be 0 or 1. But you put {value}.")
 
     def on(self):
         return self.value(1)
@@ -79,7 +89,7 @@ class I2C:
             self.address = address
         elif isinstance(address, list):
             connected_devices = self.scan()
-            print(f"{connected_devices=}")
+            logger.debug(f"connected_devices={connected_devices}")
             for addr in address:
                 if addr in connected_devices:
                     self.address = addr
@@ -100,7 +110,7 @@ class I2C:
                 if _addr != "--":
                     addresses.append(int(_addr, 16))
         if not addresses:
-            print("No device is connected. ")
+            logger.warning("No device is connected.")
         return addresses
 
     def write(self, data: list):
@@ -108,7 +118,7 @@ class I2C:
             reg = data[0]
             write_data = (data[2] << 8) + data[1]
             self._write_word_data(reg, write_data)
-            print(f"write_data: [0X{reg:02X}], [0X{write_data:02X}]")
+            logger.debug(f"write_data: [0X{reg:02X}], [0X{write_data:02X}]")
 
     def _write_word_data(self, reg, write_data):
         self._smbus.write_word_data(self.address, reg, write_data)
@@ -190,6 +200,7 @@ class PWM(I2C):
                 reg = self.REG_PSC + self.timer_index
             else:
                 reg = self.REG_PSC2 + self.timer_index - 4
+            logger.debug(f"Write prescaler")
             self._i2c_write(reg, self._prescaler - 1)
 
     def period(self, arr: float):
@@ -204,6 +215,7 @@ class PWM(I2C):
                 reg = self.REG_ARR + self.timer_index
             else:
                 reg = self.REG_ARR2 + self.timer_index - 4
+            logger.debug(f"Write period")
             self._i2c_write(reg, timer[self.timer_index]["arr"])
         
 
@@ -213,6 +225,7 @@ class PWM(I2C):
         else:
             self._pulse_width = pulse_width
             reg = self.REG_CHN + self.channel
+            logger.debug(f"register: {reg}, pulse_width: {self._pulse_width}")
             self._i2c_write(reg, self._pulse_width)
 
     def _i2c_write(self, reg, value):
@@ -243,6 +256,7 @@ class Servo(PWM):
             angle = -90
 
         pulse_width_time = self.map_pwt(angle)
+        logger.debug(f"{pulse_width_time=}")
         self.pulse_width_time(pulse_width_time)
         
     def map_pwt(self, angle):
@@ -262,14 +276,14 @@ class Servo(PWM):
         
         pulse_width_rate = pulse_width_time / 20000
         value = int(pulse_width_rate * self.PERIOD)
-        print(f"{value=}")
+        logger.debug(f"PWR value ={value}")
         self.pulse_width(value)
 
 def move_servo(channel):
     servo = Servo(channel)
     servo.angle(50)
     sleep(0.5)
-    servo.angle(channel)
+    servo.angle(0)
     sleep(0.5)
 
 
